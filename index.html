@@ -1,0 +1,455 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Local Cloud Launcher</title>
+<style>
+    /* ローディングオーバーレイ（同期中のみ表示用） */
+    #sync-indicator {
+        position: fixed; top: 10px; right: 10px; 
+        background: rgba(0,0,0,0.7); color: white; padding: 5px 10px; 
+        border-radius: 4px; font-size: 0.8em; z-index: 9999;
+        display: none; pointer-events: none;
+    }
+
+    /* 基本スタイル (以前のCSSを継承・最適化) */
+    body { font-family: "Meiryo", sans-serif; background-color: #ECFFFF; margin: 0; padding: 0; display: flex; flex-direction: column; height: 100vh; box-sizing: border-box; }
+    #header-row { background-color: #f0f0f0; border-bottom: 3px solid #7D7DFF; display: flex; align-items: center; padding: 5px 10px 0 10px; gap: 10px; flex-shrink: 0; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+    #toolbar { display: flex; gap: 5px; padding-bottom: 5px; align-items: center; }
+    button { cursor: pointer; padding: 4px 8px; font-size: 0.85em; font-weight: bold; white-space: nowrap; border: 1px solid #999; border-radius: 3px; background-color: #eee; transition: background-color 0.2s; }
+    button:hover { background-color: #ddd; }
+    
+    /* タブ周り */
+    #tab-container { display: flex; gap: 4px; overflow-x: auto; flex-grow: 1; align-self: flex-end; scrollbar-width: none; }
+    #tab-container::-webkit-scrollbar { display: none; }
+    .tab { padding: 6px 12px; background-color: #ddd; border: 1px solid #999; border-bottom: none; border-radius: 5px 5px 0 0; cursor: pointer; display: flex; align-items: center; gap: 6px; user-select: none; white-space: nowrap; font-size: 0.9em; opacity: 0.8; transition: background-color 0.2s; max-width: 200px; }
+    .tab:hover { background-color: #eee; opacity: 1.0; }
+    .tab.active { background-color: #7D7DFF; color: white; font-weight: bold; opacity: 1.0; padding-bottom: 8px; margin-top: -2px; }
+    .tab-input { background: transparent; border: none; font-family: inherit; font-size: inherit; font-weight: inherit; color: inherit; width: 100px; min-width: 50px; cursor: pointer; }
+    .tab-input:focus { background-color: rgba(255,255,255,0.3); outline: none; cursor: text; color: inherit; }
+    .tab-icon { font-size: 0.8em; width: 18px; height: 18px; line-height: 18px; text-align: center; border-radius: 50%; color: #555; background-color: rgba(255,255,255,0.6); flex-shrink: 0; }
+    .tab-icon:hover { background-color: white; color: black; }
+    .tab-close:hover { background-color: #ff6666; color: white; }
+
+    /* ボード・カラム周り */
+    #board { display: grid; gap: 10px; overflow-y: auto; height: 100%; padding: 20px; align-content: start; }
+    @media (max-width: 700px) { #board { grid-template-columns: 1fr; } }
+    @media (min-width: 701px) and (max-width: 1020px) { #board { grid-template-columns: repeat(2, 1fr); } }
+    @media (min-width: 1021px) and (max-width: 1340px) { #board { grid-template-columns: repeat(3, 1fr); } }
+    @media (min-width: 1341px) and (max-width: 1660px) { #board { grid-template-columns: repeat(4, 1fr); } }
+    @media (min-width: 1661px) and (max-width: 1980px) { #board { grid-template-columns: repeat(5, 1fr); } }
+    @media (min-width: 1981px) { #board { grid-template-columns: repeat(6, 1fr); } }
+
+    .mobile-page-header { width: 100%; background-color: #666; color: white; padding: 5px 10px; margin-top: 20px; margin-bottom: 10px; font-weight: bold; border-radius: 4px; font-size: 0.95rem; grid-column: 1 / -1; }
+    .column { background-color: #ffffff; border: 2px solid #000; display: flex; flex-direction: column; max-height: 400px; box-shadow: 3px 3px 5px rgba(0,0,0,0.2); min-width: 0; }
+    .column-header { background-color: #7D7DFF; color: white; padding: 5px; font-weight: bold; display: flex; align-items: center; gap: 5px; }
+    .column-header input { background: transparent; border: none; color: white; font-weight: bold; flex-grow: 1; font-size: 1rem; min-width: 0; }
+    .column-header input:focus { background-color: rgba(255,255,255,0.2); outline: none; }
+    .header-btn { font-size: 0.8em; cursor: pointer; color: #fff; background-color: rgba(0,0,0,0.2); border-radius: 3px; padding: 2px 6px; user-select: none; }
+    .header-btn:hover { background-color: rgba(0,0,0,0.4); }
+    .header-btn-add { background-color: #4CAF50; font-weight: bold; }
+    .header-btn-close { background-color: transparent; color: #fff; font-size: 1.2em; padding: 0 5px; }
+    .header-btn-close:hover { color: #ffcccc; }
+    .link-list { padding: 5px; flex-grow: 1; overflow-y: auto; min-height: 50px; position: relative; }
+    .link-item { padding: 4px; margin-bottom: 2px; background-color: white; border-bottom: 1px dotted #ccc; display: flex; justify-content: space-between; align-items: center; cursor: grab; position: relative; }
+    .link-item.dragging { opacity: 0.5; cursor: grabbing; }
+    .link-item.drag-over-top { border-top: 3px solid #4CAF50; padding-top: 1px; }
+    .link-item:hover { background-color: #e0e0ff; }
+    .link-text { text-decoration: none; color: blue; cursor: pointer; display: block; flex-grow: 1; font-size: 0.9em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-right: 5px; pointer-events: auto; }
+    .link-text:hover { text-decoration: underline; }
+    .controls { display: flex; gap: 4px; flex-shrink: 0; }
+    .btn-icon { font-size: 1.1em; cursor: pointer; user-select: none; padding: 0 3px; }
+    .link-list.drag-over-bottom { border-bottom: 3px solid #4CAF50; }
+    
+    /* 編集用モーダル */
+    #edit-modal-overlay { display: none; position: fixed; top:0; left:0; right:0; bottom:0; background-color: rgba(0,0,0,0.5); justify-content: center; align-items: center; z-index: 9998; }
+    #edit-modal-box { background-color: white; padding: 20px; border-radius: 8px; box-shadow: 0 4px 10px rgba(0,0,0,0.3); width: 90%; max-width: 500px; }
+    #edit-modal-box h3 { margin: 0 0 15px; font-size: 1.2em; }
+    #edit-modal-box label { display: block; margin-top: 10px; font-weight: bold; font-size: 0.9em; }
+    #edit-modal-box input, #edit-modal-box textarea { width: 100%; box-sizing: border-box; padding: 6px; border: 1px solid #ccc; border-radius: 3px; font-family: inherit; font-size: 0.95em; }
+    #edit-modal-box textarea { resize: vertical; min-height: 80px; }
+    #modal-buttons { display: flex; gap: 10px; margin-top: 20px; }
+    #modal-buttons button { flex: 1; padding: 8px; font-size: 1em; }
+    #link-details-container { display: none; flex-direction: column; }
+
+    @media (max-width: 768px) {
+        #toolbar { overflow-x: auto; max-width: 100%; scrollbar-width: thin; }
+        #header-row { flex-wrap: wrap; }
+        .column { max-height: none; }
+        #board { padding: 10px; }
+        body { font-size: 14px; }
+    }
+</style>
+</head>
+<body>
+
+<div id="sync-indicator">🔄 クラウドと同期中...</div>
+
+<div id="header-row">
+    <div id="toolbar">
+        <button id="btnSave" onclick="saveToCloud()" style="background-color:#ffe;" title="クラウドへ保存">☁ 保存</button>
+        <button id="btnSync" onclick="forceSync()" title="クラウドから最新データを取得">🔄 再同期</button>
+        <button id="btnAddPage" onclick="addNewPage()">➕ページ</button>
+        <button id="btnAddCategory" onclick="addCategory()">➕カテゴリ</button>
+    </div>
+    <div id="tab-container"></div>
+</div>
+
+<div id="board"></div>
+
+<div id="edit-modal-overlay" onclick="if(event.target === this) closeEditModal();">
+    <div id="edit-modal-box" onclick="event.stopPropagation();">
+        <h3 id="modal-title">編集</h3>
+        <label for="edit-name-input">名称</label>
+        <input type="text" id="edit-name-input" placeholder="名称を入力">
+        <div id="link-details-container">
+            <label for="edit-url-input">URL</label>
+            <input type="text" id="edit-url-input" placeholder="https://...">
+            <label for="edit-memo-input">メモ（任意）</label>
+            <textarea id="edit-memo-input" placeholder="メモを入力"></textarea>
+        </div>
+        <div id="modal-buttons">
+            <button onclick="closeEditModal()">キャンセル</button>
+            <button onclick="saveEditModal()" style="background-color:#4CAF50; color:white;">保存</button>
+        </div>
+    </div>
+</div>
+
+<script>
+    // ■■■ 設定：GASのウェブアプリURLをここに設定してください ■■■
+    const GAS_API_URL = "https://script.google.com/macros/s/xxxxxxxxx/exec";
+    
+    const LOCAL_STORAGE_KEY = "launcher_data_v9";
+    let pages = [];
+    let activePageIndex = 0;
+    let editingTarget = null;
+    let isDragging = false;
+    let isDropProcessing = false;
+
+    // 起動時の処理
+    window.onload = function() {
+        // 1. まずローカルストレージから読み込んで即時表示（0秒起動）
+        const localData = localStorage.getItem(LOCAL_STORAGE_KEY);
+        if (localData) {
+            try {
+                pages = JSON.parse(localData);
+                renderTabs();
+                renderBoard();
+            } catch (e) {
+                console.error("Local Data Parse Error", e);
+                initDefault();
+            }
+        } else {
+            initDefault();
+            renderTabs();
+            renderBoard();
+        }
+        checkMobileDisplay();
+
+        // 2. バックグラウンドでクラウド(GAS)と同期
+        syncWithCloud();
+    };
+
+    // 初期データ
+    function initDefault() {
+        pages = [{
+            id: "page1", name: "メイン",
+            categories: [
+                { title: "よく使うリンク", links: [{ name: "Google", url: "https://www.google.com", memo: "" }] }
+            ]
+        }];
+    }
+
+    // クラウドからデータ取得（同期）
+    function syncWithCloud() {
+        if(!GAS_API_URL.includes("script.google.com")) {
+            console.warn("GAS URLが未設定です。ローカルモードのみで動作します。");
+            return;
+        }
+
+        const indicator = document.getElementById('sync-indicator');
+        indicator.style.display = 'block';
+
+        fetch(GAS_API_URL)
+            .then(response => response.json())
+            .then(data => {
+                indicator.style.display = 'none';
+                if (Array.isArray(data) && data.length > 0) {
+                    // 簡易的な同期：クラウドのデータで上書きする
+                    // （より高度な同期が必要な場合はタイムスタンプ比較などを実装）
+                    const currentStr = JSON.stringify(pages);
+                    const cloudStr = JSON.stringify(data);
+                    
+                    if (currentStr !== cloudStr) {
+                        console.log("クラウドから新しいデータを取得しました。更新します。");
+                        pages = data;
+                        localStorage.setItem(LOCAL_STORAGE_KEY, cloudStr);
+                        renderTabs();
+                        renderBoard();
+                    } else {
+                        console.log("データは最新です。");
+                    }
+                }
+            })
+            .catch(err => {
+                indicator.style.display = 'none';
+                console.error("Sync Error:", err);
+            });
+    }
+    
+    // 手動再同期
+    function forceSync() {
+        syncWithCloud();
+    }
+
+    // クラウドへ保存
+    function saveToCloud() {
+        const btn = document.getElementById('btnSave');
+        const originalText = btn.innerText;
+        btn.innerText = "⏳ 保存中...";
+        btn.disabled = true;
+
+        // 1. まずローカルストレージに保存（高速）
+        const jsonStr = JSON.stringify(pages);
+        localStorage.setItem(LOCAL_STORAGE_KEY, jsonStr);
+
+        // 2. GASへPOST送信
+        if(!GAS_API_URL.includes("script.google.com")) {
+            alert("保存完了（ローカルのみ）。GAS URLが設定されていません。");
+            btn.innerText = originalText;
+            btn.disabled = false;
+            return;
+        }
+
+        fetch(GAS_API_URL, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'text/plain', // GASの仕様上、text/plainで送るのが確実
+            },
+            body: jsonStr
+        })
+        .then(response => response.json())
+        .then(result => {
+            if(result.result === "SUCCESS") {
+                btn.innerText = "✔ 保存完了";
+                btn.style.backgroundColor = "#b3ffb3";
+            } else {
+                throw new Error(result.message || "Unknown Error");
+            }
+        })
+        .catch(err => {
+            alert("クラウド保存エラー: " + err + "\n※ローカルには保存されています。");
+            btn.innerText = "❌ エラー";
+        })
+        .finally(() => {
+            setTimeout(() => {
+                btn.innerText = originalText;
+                btn.style.backgroundColor = "#ffe";
+                btn.disabled = false;
+            }, 2000);
+        });
+    }
+
+    // --- 以下、UI制御ロジック（既存コードを流用・調整） ---
+
+    function isMobileMode() { return window.innerWidth <= 768; }
+
+    function checkMobileDisplay() {
+        const isMobile = isMobileMode();
+        document.getElementById('btnAddPage').style.display = isMobile ? 'none' : 'inline-block';
+        document.getElementById('btnAddCategory').style.display = isMobile ? 'none' : 'inline-block';
+        document.getElementById('tab-container').style.display = isMobile ? 'none' : 'flex';
+    }
+
+    window.addEventListener('resize', checkMobileDisplay);
+
+    function switchTab(index) {
+        activePageIndex = index;
+        renderTabs();
+        renderBoard();
+    }
+
+    function renderTabs() {
+        const isMobile = isMobileMode();
+        const container = document.getElementById('tab-container');
+        container.innerHTML = '';
+        if (isMobile) return;
+
+        pages.forEach((page, index) => {
+            const tab = document.createElement('div');
+            tab.className = 'tab' + (index === activePageIndex ? ' active' : '');
+            
+            const input = document.createElement('input');
+            input.type = 'text'; input.className = 'tab-input'; input.value = page.name;
+            input.onclick = (e) => { e.stopPropagation(); if (index !== activePageIndex) switchTab(index); };
+            input.onblur = (e) => { pages[index].name = e.target.value || "無題"; renderTabs(); saveToCloud(); }; // 自動保存に変更したい場合はここで呼ぶ
+            input.onkeydown = (e) => { if(e.key === 'Enter') e.target.blur(); };
+
+            const leftIcon = document.createElement('span'); leftIcon.className = 'tab-icon'; leftIcon.innerHTML = '◀';
+            leftIcon.onclick = (e) => { e.stopPropagation(); if (index > 0) { [pages[index], pages[index-1]] = [pages[index-1], pages[index]]; if (activePageIndex === index) activePageIndex--; else if (activePageIndex === index-1) activePageIndex++; renderTabs(); renderBoard(); saveToCloud(); } };
+
+            const rightIcon = document.createElement('span'); rightIcon.className = 'tab-icon'; rightIcon.innerHTML = '▶';
+            rightIcon.onclick = (e) => { e.stopPropagation(); if (index < pages.length - 1) { [pages[index], pages[index+1]] = [pages[index+1], pages[index]]; if (activePageIndex === index) activePageIndex++; else if (activePageIndex === index+1) activePageIndex--; renderTabs(); renderBoard(); saveToCloud(); } };
+
+            const closeIcon = document.createElement('span'); closeIcon.className = 'tab-icon tab-close'; closeIcon.innerHTML = '×';
+            closeIcon.onclick = (e) => { e.stopPropagation(); deletePage(index); };
+
+            tab.onclick = () => switchTab(index);
+            tab.appendChild(leftIcon); tab.appendChild(input); tab.appendChild(rightIcon); tab.appendChild(closeIcon);
+            container.appendChild(tab);
+        });
+    }
+
+    function renderBoard() {
+        const board = document.getElementById('board');
+        board.innerHTML = '';
+        const isMobile = isMobileMode();
+        const pagesToShow = isMobile ? pages : [pages[activePageIndex]];
+
+        pagesToShow.forEach((page, pageIdx) => {
+            const actualPageIdx = isMobile ? pageIdx : activePageIndex;
+            if (isMobile && pages.length > 1) {
+                const pageHeader = document.createElement('div'); pageHeader.className = 'mobile-page-header'; pageHeader.textContent = page.name; board.appendChild(pageHeader);
+            }
+
+            page.categories.forEach((cat, catIndex) => {
+                const colDiv = document.createElement('div'); colDiv.className = 'column';
+                colDiv.ondrop = (e) => { e.preventDefault(); handleLinkDrop(e, actualPageIdx, catIndex); };
+                colDiv.ondragover = (e) => e.preventDefault();
+
+                const headerDiv = document.createElement('div'); headerDiv.className = 'column-header';
+                const leftBtn = document.createElement('span'); leftBtn.className = 'header-btn'; leftBtn.innerHTML = '◀'; leftBtn.onclick = () => { if(catIndex > 0) moveCategory(actualPageIdx, catIndex, -1); };
+                const rightBtn = document.createElement('span'); rightBtn.className = 'header-btn'; rightBtn.innerHTML = '▶'; rightBtn.onclick = () => { if(catIndex < page.categories.length - 1) moveCategory(actualPageIdx, catIndex, 1); };
+
+                const titleInput = document.createElement('input'); titleInput.type = 'text'; titleInput.value = cat.title;
+                titleInput.onblur = (e) => { page.categories[catIndex].title = e.target.value || "無題"; saveToCloud(); }; // 変更時保存
+                titleInput.onkeydown = (e) => { if(e.key === 'Enter') e.target.blur(); };
+
+                const addBtn = document.createElement('span'); addBtn.className = 'header-btn header-btn-add'; addBtn.innerHTML = '+'; addBtn.onclick = () => addLink(actualPageIdx, catIndex);
+                const delBtn = document.createElement('span'); delBtn.className = 'header-btn-close'; delBtn.innerHTML = '×'; delBtn.onclick = () => deleteCategory(actualPageIdx, catIndex);
+
+                headerDiv.append(leftBtn, rightBtn, titleInput, addBtn, delBtn); colDiv.appendChild(headerDiv);
+
+                const listDiv = document.createElement('div'); listDiv.className = 'link-list';
+                listDiv.ondrop = (e) => { e.preventDefault(); listDiv.classList.remove('drag-over-bottom'); handleLinkDrop(e, actualPageIdx, catIndex, -1); };
+                listDiv.ondragover = (e) => { e.preventDefault(); if (!e.target.closest('.link-item')) listDiv.classList.add('drag-over-bottom'); };
+                listDiv.ondragleave = (e) => { if (!listDiv.contains(e.relatedTarget)) listDiv.classList.remove('drag-over-bottom'); };
+
+                if (cat.links) {
+                    cat.links.forEach((link, linkIndex) => {
+                        const linkDiv = document.createElement('div'); linkDiv.className = 'link-item'; linkDiv.draggable = true; linkDiv.dataset.index = linkIndex;
+                        
+                        linkDiv.ondragstart = (e) => { isDragging = true; linkDiv.classList.add('dragging'); const data = { type: 'internal', pageIdx: actualPageIdx, catIdx: catIndex, linkIdx: linkIndex }; e.dataTransfer.setData('text/plain', JSON.stringify(data)); e.dataTransfer.effectAllowed = 'move'; };
+                        linkDiv.ondragend = (e) => { 
+                            setTimeout(() => { isDragging = false; isDropProcessing = false; linkDiv.classList.remove('dragging'); }, 150);
+                            document.querySelectorAll('.drag-over-top, .drag-over-bottom').forEach(el => el.classList.remove('drag-over-top', 'drag-over-bottom'));
+                        };
+                        linkDiv.ondragover = (e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; if (e.dataTransfer.types.includes('text/plain')) { linkDiv.classList.add('drag-over-top'); listDiv.classList.remove('drag-over-bottom'); } };
+                        linkDiv.ondragleave = (e) => { if (!linkDiv.contains(e.relatedTarget)) linkDiv.classList.remove('drag-over-top'); };
+                        linkDiv.ondrop = (e) => { e.stopPropagation(); e.preventDefault(); linkDiv.classList.remove('drag-over-top'); handleLinkDrop(e, actualPageIdx, catIndex, linkIndex); };
+
+                        const anchor = document.createElement('a'); anchor.className = 'link-text'; anchor.href = link.url; anchor.innerText = '・' + (link.name || "名称未設定"); anchor.target = "_blank";
+                        anchor.onclick = (e) => { if (isDragging) { e.preventDefault(); e.stopPropagation(); return false; } };
+                        anchor.title = (link.memo ? "【メモ】\n" + link.memo + "\n\n" : "") + "【URL】\n" + link.url;
+
+                        const controlsDiv = document.createElement('div'); controlsDiv.className = 'controls';
+                        const editLinkBtn = document.createElement('span'); editLinkBtn.innerText = '✎'; editLinkBtn.className = 'btn-icon'; editLinkBtn.style.color = 'green';
+                        editLinkBtn.onclick = (e) => { e.preventDefault(); e.stopPropagation(); openLinkEditModal(actualPageIdx, catIndex, linkIndex); };
+                        const delLinkBtn = document.createElement('span'); delLinkBtn.innerText = '×'; delLinkBtn.className = 'btn-icon'; delLinkBtn.style.color = 'red';
+                        delLinkBtn.onclick = (e) => { e.preventDefault(); e.stopPropagation(); deleteLink(actualPageIdx, catIndex, linkIndex); };
+
+                        controlsDiv.append(editLinkBtn, delLinkBtn); linkDiv.append(anchor, controlsDiv); listDiv.appendChild(linkDiv);
+                    });
+                }
+                colDiv.appendChild(listDiv); board.appendChild(colDiv);
+            });
+        });
+    }
+
+    function moveCategory(pageIdx, index, direction) { 
+        const currentCats = pages[pageIdx].categories; 
+        const itemToMove = currentCats.splice(index, 1)[0]; 
+        currentCats.splice(index + direction, 0, itemToMove); 
+        renderBoard(); saveToCloud();
+    }
+    
+    function addLink(pageIdx, catIndex) { 
+        if(!pages[pageIdx].categories[catIndex].links) pages[pageIdx].categories[catIndex].links=[]; 
+        pages[pageIdx].categories[catIndex].links.push({ name: "新規リンク", url: "", memo: "" }); 
+        renderBoard(); saveToCloud();
+    }
+    
+    function deleteCategory(pageIdx, index) { 
+        if(confirm("カテゴリを削除しますか？")) { 
+            pages[pageIdx].categories.splice(index, 1); 
+            renderBoard(); saveToCloud();
+        } 
+    }
+    
+    function deleteLink(pageIdx, catIdx, linkIdx) { 
+        if(confirm("削除しますか？")) { 
+            pages[pageIdx].categories[catIdx].links.splice(linkIdx, 1); 
+            renderBoard(); saveToCloud();
+        } 
+    }
+
+    function handleLinkDrop(e, toPageIdx, toCatIndex, insertIndex = null) {
+        if (isDropProcessing) return; isDropProcessing = true;
+        if (insertIndex === null) { const targetItem = e.target.closest('.link-item'); insertIndex = targetItem ? parseInt(targetItem.dataset.index, 10) : -1; }
+        const rawData = e.dataTransfer.getData('text/plain');
+
+        if (rawData.startsWith('http')) {
+             const newLink = { name: "新規リンク", url: rawData, memo: "" };
+             const targetCats = pages[toPageIdx].categories;
+             if(!targetCats[toCatIndex].links) targetCats[toCatIndex].links = [];
+             if (insertIndex !== -1 && insertIndex < targetCats[toCatIndex].links.length) targetCats[toCatIndex].links.splice(insertIndex, 0, newLink);
+             else targetCats[toCatIndex].links.push(newLink);
+             renderBoard(); saveToCloud(); setTimeout(() => { isDropProcessing = false; }, 100); return;
+        }
+        try {
+            const data = JSON.parse(rawData);
+            if (data.type === 'internal') {
+                const srcLinks = pages[data.pageIdx].categories[data.catIdx].links;
+                const item = srcLinks[data.linkIdx];
+                if (data.pageIdx === toPageIdx && data.catIdx === toCatIndex) {
+                    if (data.linkIdx === insertIndex) { isDropProcessing = false; return; }
+                    srcLinks.splice(data.linkIdx, 1);
+                    if (insertIndex === -1) srcLinks.push(item);
+                    else { let adjustedIndex = insertIndex; if (insertIndex > data.linkIdx) adjustedIndex--; srcLinks.splice(adjustedIndex, 0, item); }
+                } else {
+                    srcLinks.splice(data.linkIdx, 1);
+                    const destCats = pages[toPageIdx].categories;
+                    if(!destCats[toCatIndex].links) destCats[toCatIndex].links = [];
+                    if (insertIndex !== -1 && insertIndex < destCats[toCatIndex].links.length) destCats[toCatIndex].links.splice(insertIndex, 0, item);
+                    else destCats[toCatIndex].links.push(item);
+                }
+                renderBoard(); saveToCloud(); setTimeout(() => { isDropProcessing = false; }, 100);
+            }
+        } catch (err) { isDropProcessing = false; }
+    }
+
+    function openLinkEditModal(pageIdx, catIdx, linkIdx) {
+        editingTarget = { type: 'link', pageIdx: pageIdx, catIdx: catIdx, linkIdx: linkIdx };
+        const target = pages[pageIdx].categories[catIdx].links[linkIdx];
+        document.getElementById('edit-name-input').value = target.name; document.getElementById('edit-url-input').value = target.url || ""; document.getElementById('edit-memo-input').value = target.memo || "";
+        document.getElementById('link-details-container').style.display = 'flex'; document.getElementById('edit-modal-overlay').style.display = 'flex'; document.getElementById('edit-name-input').focus();
+    }
+    function closeEditModal() { document.getElementById('edit-modal-overlay').style.display = 'none'; editingTarget = null; }
+    function saveEditModal() {
+        if (!editingTarget) return; const newName = document.getElementById('edit-name-input').value; if (!newName) { alert("名称は必須です"); return; }
+        if (editingTarget.type === 'link') {
+            const { pageIdx, catIdx, linkIdx } = editingTarget;
+            const target = pages[pageIdx].categories[catIdx].links[linkIdx];
+            target.name = newName; target.url = document.getElementById('edit-url-input').value; target.memo = document.getElementById('edit-memo-input').value;
+            renderBoard(); saveToCloud();
+        }
+        closeEditModal();
+    }
+
+    function addNewPage() { if (isMobileMode()) return; const name = prompt("新しいページの名称", "新規ページ"); if (name) { pages.push({ id: Date.now().toString(), name: name, categories: [] }); switchTab(pages.length - 1); saveToCloud(); } }
+    function deletePage(index) { if (pages.length <= 1) { alert("最後の1ページは削除できません。"); return; } if (confirm(`ページ「${pages[index].name}」を完全に削除しますか？`)) { pages.splice(index, 1); if (activePageIndex >= pages.length) activePageIndex = pages.length - 1; renderTabs(); renderBoard(); saveToCloud(); } }
+    function addCategory() { if (isMobileMode()) return; const name = prompt("カテゴリー名", "新規カテゴリ"); if (name) { pages[activePageIndex].categories.push({ title: name, links: [] }); renderBoard(); saveToCloud(); } }
+</script>
+</body>
+</html>
