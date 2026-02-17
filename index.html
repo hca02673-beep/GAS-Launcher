@@ -118,7 +118,7 @@
 
 <script>
     // ■■■ 設定：GASのウェブアプリURLをここに設定してください ■■■
-    const GAS_API_URL = "https://script.google.com/macros/s/xxxxxxxxx/exec";
+    const GAS_API_URL = "https://script.google.com/macros/s/AKfycbygATCYKgzWwyLQbStKmkmNQF_CQR1fon79AU2TxNQeOOmbvndpGsS9xEqD48LZs8OPHA/exec";
     
     const LOCAL_STORAGE_KEY = "launcher_data_v9";
     let pages = [];
@@ -452,4 +452,5 @@
     function addCategory() { if (isMobileMode()) return; const name = prompt("カテゴリー名", "新規カテゴリ"); if (name) { pages[activePageIndex].categories.push({ title: name, links: [] }); renderBoard(); saveToCloud(); } }
 </script>
 </body>
+
 </html>
