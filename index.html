@@ -92,8 +92,8 @@
         <button id="btnBackup" onclick="backupToDrive()" title="ドライブにバックアップ作成">☁📤 バックアップ</button>
         <button id="btnRestore" onclick="openFileLoadModal()" title="バックアップから復元">☁📖 バックアップ読出</button>
         <div style="width:1px; height:20px; background:#ccc; margin:0 5px;"></div>
-        <button id="btnAddPage" onclick="addNewPage()">➕ページ</button>
-        <button id="btnAddCategory" onclick="addCategory()">➕カテゴリ</button>
+        <button id="btnAddPage" onclick="addNewPage()">➕ページ追加</button>
+        <button id="btnAddCategory" onclick="addCategory()">➕枠追加</button>
     </div>
     <div id="tab-container"></div>
 </div>
@@ -154,7 +154,6 @@
         renderBoard();
         checkMobileDisplay();
         
-        // 起動時のみ自動同期
         syncWithCloud(); 
     };
 
@@ -163,8 +162,6 @@
     }
 
     // --- API通信関連 ---
-
-    // 1. 同期（バックグラウンド読込）
     function syncWithCloud() {
         const indicator = document.getElementById('sync-indicator');
         indicator.style.display = 'block';
@@ -193,7 +190,6 @@
             });
     }
 
-    // 2. 内容保存 (action=save)
     function saveToCloud() {
         const btn = document.getElementById('btnSave');
         const originalText = btn.innerText;
@@ -217,7 +213,6 @@
             });
     }
 
-    // 3. バックアップ作成 (action=backup)
     function backupToDrive() {
         if(!confirm("ドライブのLauncherBackupsフォルダに\n現在の状態をバックアップしますか？")) return;
         
@@ -240,7 +235,6 @@
             });
     }
 
-    // 4. バックアップ一覧取得 (GET: action=list)
     function openFileLoadModal() {
         document.getElementById('file-select-modal-overlay').style.display = 'flex';
         const container = document.getElementById('file-list-container');
@@ -268,7 +262,6 @@
             });
     }
 
-    // 5. 復元実行 (action=restore)
     function loadSelectedFile(fileId, fileName) {
         if (!confirm("ファイル「" + fileName + "」を読み込みますか？\n\n※現在の画面内容は破棄され、メインDBも上書きされます。")) return;
         
@@ -297,7 +290,6 @@
             });
     }
 
-    // 共通POST関数
     function postToGas(payload) {
         return fetch(GAS_API_URL, {
             method: "POST",
@@ -308,7 +300,7 @@
 
     function closeFileSelectModal() { document.getElementById('file-select-modal-overlay').style.display = 'none'; }
 
-    // --- UIロジック（変更なし） ---
+    // --- UIロジック ---
     function isMobileMode() { return window.innerWidth <= 768; }
     function checkMobileDisplay() {
         const isMobile = isMobileMode();
@@ -395,6 +387,20 @@
         });
     }
 
+    // --- 新規リンク追加ロジック (不足していた関数) ---
+    function addLink(pIdx, cIdx) {
+        const newLink = { name: "新規リンク", url: "https://", memo: "" };
+        if (!pages[pIdx].categories[cIdx].links) {
+            pages[pIdx].categories[cIdx].links = [];
+        }
+        pages[pIdx].categories[cIdx].links.push(newLink);
+        
+        // 追加後すぐに編集モードを開く
+        renderBoard();
+        const newLinkIdx = pages[pIdx].categories[cIdx].links.length - 1;
+        openLinkEditModal(pIdx, cIdx, newLinkIdx);
+    }
+
     function handleLinkDrop(e, pIdx, cIdx, insertIdx = null) {
         if (isDropProcessing) return; isDropProcessing = true;
         const raw = e.dataTransfer.getData('text/plain');
@@ -418,7 +424,7 @@
         setTimeout(() => isDropProcessing = false, 100);
     }
 
-    function openLinkEditModal(p, c, l) { editingTarget = {p,c,l}; const t = pages[p].categories[c].links[l]; document.getElementById('edit-name-input').value = t.name; document.getElementById('edit-url-input').value = t.url; document.getElementById('edit-memo-input').value = t.memo; document.getElementById('link-details-container').style.display='flex'; document.getElementById('edit-modal-overlay').style.display='flex'; }
+    function openLinkEditModal(p, c, l) { editingTarget = {p,c,l}; const t = pages[p].categories[c].links[l]; document.getElementById('edit-name-input').value = t.name; document.getElementById('edit-url-input').value = t.url; document.getElementById('edit-memo-input').value = t.memo || ""; document.getElementById('link-details-container').style.display='flex'; document.getElementById('edit-modal-overlay').style.display='flex'; }
     function closeEditModal() { document.getElementById('edit-modal-overlay').style.display='none'; }
     function saveEditModal() { const {p,c,l} = editingTarget; const t = pages[p].categories[c].links[l]; t.name = document.getElementById('edit-name-input').value; t.url = document.getElementById('edit-url-input').value; t.memo = document.getElementById('edit-memo-input').value; renderBoard(); saveToCloud(); closeEditModal(); }
     
@@ -430,4 +436,3 @@
 </script>
 </body>
 </html>
-
