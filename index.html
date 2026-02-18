@@ -84,16 +84,17 @@
 </head>
 <body>
 
-<div id="sync-indicator">🔄 同期中...</div>
+<div id="sync-indicator">🔄 処理中...</div>
 
 <div id="header-row">
     <div id="toolbar">
         <button id="btnSave" onclick="saveToCloud()" style="background-color:#ffe;" title="クラウドへ保存">☁ 内容保存</button>
+        <button id="btnLoad" onclick="loadFromCloud()" style="background-color:#e6f3ff;" title="クラウドから読出">☁ 内容読出</button>
         <button id="btnBackup" onclick="backupToDrive()" title="ドライブにバックアップ作成">☁📤 バックアップ</button>
         <button id="btnRestore" onclick="openFileLoadModal()" title="バックアップから復元">☁📖 バックアップ読出</button>
         <div style="width:1px; height:20px; background:#ccc; margin:0 5px;"></div>
-        <button id="btnAddPage" onclick="addNewPage()">➕ページ追加</button>
-        <button id="btnAddCategory" onclick="addCategory()">➕枠追加</button>
+        <button id="btnAddPage" onclick="addNewPage()">➕ページ</button>
+        <button id="btnAddCategory" onclick="addCategory()">➕カテゴリ</button>
     </div>
     <div id="tab-container"></div>
 </div>
@@ -142,7 +143,7 @@
     let isDragging = false;
     let isDropProcessing = false;
 
-    // --- 初期化・同期 ---
+    // --- 初期化 ---
     window.onload = function() {
         const localData = localStorage.getItem(LOCAL_STORAGE_KEY);
         if (localData) {
@@ -153,8 +154,7 @@
         renderTabs();
         renderBoard();
         checkMobileDisplay();
-        
-        syncWithCloud(); 
+        // 起動時の syncWithCloud() (自動同期) を廃止しました。
     };
 
     function initDefault() {
@@ -162,39 +162,51 @@
     }
 
     // --- API通信関連 ---
-    function syncWithCloud() {
+    
+    // クラウド(launcer_cloud_db.json)からデータを読み出す
+    function loadFromCloud() {
+        if(!confirm("クラウドから最新データを読み出しますか？\n現在の画面内容は上書きされます。")) return;
+
+        const btn = document.getElementById('btnLoad');
+        const originalText = btn.innerText;
+        btn.innerText = "⏳ 読出中..."; btn.disabled = true;
+
         const indicator = document.getElementById('sync-indicator');
+        indicator.innerText = "🔄 読込中...";
         indicator.style.display = 'block';
 
         fetch(GAS_API_URL)
             .then(response => response.json())
             .then(data => {
                 indicator.style.display = 'none';
-                if (data.error) { console.error("Server Error:", data.error); return; }
+                if (data.error) { alert("読出エラー: " + data.error); return; }
                 
                 if (Array.isArray(data) && data.length > 0) {
-                    const currentStr = JSON.stringify(pages);
-                    const cloudStr = JSON.stringify(data);
-                    if (currentStr !== cloudStr) {
-                        pages = data;
-                        localStorage.setItem(LOCAL_STORAGE_KEY, cloudStr);
-                        renderTabs();
-                        renderBoard();
-                        console.log("Synced with cloud");
-                    }
+                    pages = data;
+                    localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(pages));
+                    renderTabs();
+                    renderBoard();
+                    btn.innerText = "✔ 完了";
+                } else {
+                    alert("クラウドにデータがないか、形式が不正です。");
                 }
             })
             .catch(err => {
                 indicator.style.display = 'none';
-                console.error("Sync Failed:", err);
+                alert("通信エラー: " + err);
+            })
+            .finally(() => {
+                setTimeout(() => { btn.innerText = originalText; btn.disabled = false; }, 1500);
             });
     }
 
+    // クラウドへ保存
     function saveToCloud() {
         const btn = document.getElementById('btnSave');
         const originalText = btn.innerText;
-        btn.innerText = "⏳..."; btn.disabled = true;
+        btn.innerText = "⏳ 保存中..."; btn.disabled = true;
 
+        // まずローカルストレージを更新
         const jsonStr = JSON.stringify(pages);
         localStorage.setItem(LOCAL_STORAGE_KEY, jsonStr);
 
@@ -214,7 +226,7 @@
     }
 
     function backupToDrive() {
-        if(!confirm("ドライブのLauncherBackupsフォルダに\n現在の状態をバックアップしますか？")) return;
+        if(!confirm("ドライブのLauncherBackupsフォルダに\n現在の画面状態をバックアップしますか？")) return;
         
         const btn = document.getElementById('btnBackup');
         const originalText = btn.innerText;
@@ -273,7 +285,6 @@
         postToGas({ action: "restore", fileId: fileId })
             .then(res => {
                 indicator.style.display = 'none';
-                indicator.innerText = "🔄 同期中...";
                 if (res.status === "SUCCESS") {
                     pages = res.data;
                     localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(pages));
@@ -324,7 +335,7 @@
             const input = document.createElement('input');
             input.type = 'text'; input.className = 'tab-input'; input.value = page.name;
             input.onclick = (e) => { e.stopPropagation(); if (index !== activePageIndex) switchTab(index); };
-            input.onblur = (e) => { pages[index].name = e.target.value || "無題"; saveToCloud(); };
+            input.onblur = (e) => { pages[index].name = e.target.value || "無題"; /* 保存は手動ボタンに任せるためここではlocalStorageのみ */ localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(pages)); };
             input.onkeydown = (e) => { if(e.key === 'Enter') e.target.blur(); };
 
             const closeIcon = document.createElement('span'); closeIcon.className = 'tab-icon tab-close'; closeIcon.innerHTML = '×';
@@ -355,7 +366,7 @@
                 const hDiv = document.createElement('div'); hDiv.className = 'column-header';
                 
                 const titleInput = document.createElement('input'); titleInput.type = 'text'; titleInput.value = cat.title;
-                titleInput.onblur = (e) => { page.categories[catIndex].title = e.target.value; saveToCloud(); };
+                titleInput.onblur = (e) => { page.categories[catIndex].title = e.target.value; localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(pages)); };
                 
                 const addBtn = document.createElement('span'); addBtn.className = 'header-btn header-btn-add'; addBtn.innerHTML = '+'; addBtn.onclick = () => addLink(actualPageIdx, catIndex);
                 const delBtn = document.createElement('span'); delBtn.className = 'header-btn-close'; delBtn.innerHTML = '×'; delBtn.onclick = () => deleteCategory(actualPageIdx, catIndex);
@@ -387,18 +398,12 @@
         });
     }
 
-    // --- 新規リンク追加ロジック (不足していた関数) ---
     function addLink(pIdx, cIdx) {
         const newLink = { name: "新規リンク", url: "https://", memo: "" };
-        if (!pages[pIdx].categories[cIdx].links) {
-            pages[pIdx].categories[cIdx].links = [];
-        }
+        if (!pages[pIdx].categories[cIdx].links) pages[pIdx].categories[cIdx].links = [];
         pages[pIdx].categories[cIdx].links.push(newLink);
-        
-        // 追加後すぐに編集モードを開く
         renderBoard();
-        const newLinkIdx = pages[pIdx].categories[cIdx].links.length - 1;
-        openLinkEditModal(pIdx, cIdx, newLinkIdx);
+        openLinkEditModal(pIdx, cIdx, pages[pIdx].categories[cIdx].links.length - 1);
     }
 
     function handleLinkDrop(e, pIdx, cIdx, insertIdx = null) {
@@ -419,20 +424,20 @@
                    pages[pIdx].categories[cIdx].links = dest;
                 }
             }
-            renderBoard(); saveToCloud();
+            renderBoard(); localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(pages));
         } catch(err){}
         setTimeout(() => isDropProcessing = false, 100);
     }
 
     function openLinkEditModal(p, c, l) { editingTarget = {p,c,l}; const t = pages[p].categories[c].links[l]; document.getElementById('edit-name-input').value = t.name; document.getElementById('edit-url-input').value = t.url; document.getElementById('edit-memo-input').value = t.memo || ""; document.getElementById('link-details-container').style.display='flex'; document.getElementById('edit-modal-overlay').style.display='flex'; }
     function closeEditModal() { document.getElementById('edit-modal-overlay').style.display='none'; }
-    function saveEditModal() { const {p,c,l} = editingTarget; const t = pages[p].categories[c].links[l]; t.name = document.getElementById('edit-name-input').value; t.url = document.getElementById('edit-url-input').value; t.memo = document.getElementById('edit-memo-input').value; renderBoard(); saveToCloud(); closeEditModal(); }
+    function saveEditModal() { const {p,c,l} = editingTarget; const t = pages[p].categories[c].links[l]; t.name = document.getElementById('edit-name-input').value; t.url = document.getElementById('edit-url-input').value; t.memo = document.getElementById('edit-memo-input').value; renderBoard(); localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(pages)); closeEditModal(); }
     
-    function addNewPage() { const n = prompt("ページ名"); if(n) { pages.push({id:Date.now().toString(), name:n, categories:[]}); renderTabs(); renderBoard(); saveToCloud(); } }
-    function deletePage(i) { if(confirm("削除しますか？")) { pages.splice(i,1); renderTabs(); renderBoard(); saveToCloud(); } }
-    function addCategory() { const n = prompt("カテゴリ名"); if(n) { pages[activePageIndex].categories.push({title:n, links:[]}); renderBoard(); saveToCloud(); } }
-    function deleteCategory(p,i) { if(confirm("削除？")) { pages[p].categories.splice(i,1); renderBoard(); saveToCloud(); } }
-    function deleteLink(p,c,l) { if(confirm("削除？")) { pages[p].categories[c].links.splice(l,1); renderBoard(); saveToCloud(); } }
+    function addNewPage() { const n = prompt("ページ名"); if(n) { pages.push({id:Date.now().toString(), name:n, categories:[]}); renderTabs(); renderBoard(); localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(pages)); } }
+    function deletePage(i) { if(confirm("削除しますか？")) { pages.splice(i,1); renderTabs(); renderBoard(); localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(pages)); } }
+    function addCategory() { const n = prompt("カテゴリ名"); if(n) { pages[activePageIndex].categories.push({title:n, links:[]}); renderBoard(); localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(pages)); } }
+    function deleteCategory(p,i) { if(confirm("削除？")) { pages[p].categories.splice(i,1); renderBoard(); localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(pages)); } }
+    function deleteLink(p,c,l) { if(confirm("削除？")) { pages[p].categories[c].links.splice(l,1); renderBoard(); localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(pages)); } }
 </script>
 </body>
 </html>
