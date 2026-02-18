@@ -154,7 +154,6 @@
         renderTabs();
         renderBoard();
         checkMobileDisplay();
-        // 起動時の syncWithCloud() (自動同期) を廃止しました。
     };
 
     function initDefault() {
@@ -163,7 +162,7 @@
 
     // --- API通信関連 ---
     
-    // クラウド(launcer_cloud_db.json)からデータを読み出す
+    // 内容読出: クラウド(GAS)からデータを読み出し、ローカルストレージも更新する
     function loadFromCloud() {
         if(!confirm("クラウドから最新データを読み出しますか？\n現在の画面内容は上書きされます。")) return;
 
@@ -183,6 +182,7 @@
                 
                 if (Array.isArray(data) && data.length > 0) {
                     pages = data;
+                    // ローカルストレージを更新
                     localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(pages));
                     renderTabs();
                     renderBoard();
@@ -200,13 +200,13 @@
             });
     }
 
-    // クラウドへ保存
+    // 内容保存: 現在の画面情報をローカルストレージに保存し、クラウド(GAS)へ送信する
     function saveToCloud() {
         const btn = document.getElementById('btnSave');
         const originalText = btn.innerText;
         btn.innerText = "⏳ 保存中..."; btn.disabled = true;
 
-        // まずローカルストレージを更新
+        // ローカルストレージを更新
         const jsonStr = JSON.stringify(pages);
         localStorage.setItem(LOCAL_STORAGE_KEY, jsonStr);
 
@@ -225,12 +225,16 @@
             });
     }
 
+    // バックアップ: 現在の画面情報をローカルストレージに保存し、ドライブへバックアップファイルを作成する
     function backupToDrive() {
         if(!confirm("ドライブのLauncherBackupsフォルダに\n現在の画面状態をバックアップしますか？")) return;
         
         const btn = document.getElementById('btnBackup');
         const originalText = btn.innerText;
         btn.innerText = "⏳ 作成中..."; btn.disabled = true;
+
+        // 追加: バックアップ時もローカルストレージを更新
+        localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(pages));
 
         postToGas({ action: "backup", data: pages })
             .then(res => {
@@ -274,6 +278,7 @@
             });
     }
 
+    // バックアップ読出: 特定のバックアップから復元し、ローカルストレージも更新する
     function loadSelectedFile(fileId, fileName) {
         if (!confirm("ファイル「" + fileName + "」を読み込みますか？\n\n※現在の画面内容は破棄され、メインDBも上書きされます。")) return;
         
@@ -287,6 +292,7 @@
                 indicator.style.display = 'none';
                 if (res.status === "SUCCESS") {
                     pages = res.data;
+                    // ローカルストレージを更新
                     localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(pages));
                     renderTabs();
                     renderBoard();
@@ -335,7 +341,10 @@
             const input = document.createElement('input');
             input.type = 'text'; input.className = 'tab-input'; input.value = page.name;
             input.onclick = (e) => { e.stopPropagation(); if (index !== activePageIndex) switchTab(index); };
-            input.onblur = (e) => { pages[index].name = e.target.value || "無題"; /* 保存は手動ボタンに任せるためここではlocalStorageのみ */ localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(pages)); };
+            input.onblur = (e) => { 
+                pages[index].name = e.target.value || "無題"; 
+                localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(pages)); 
+            };
             input.onkeydown = (e) => { if(e.key === 'Enter') e.target.blur(); };
 
             const closeIcon = document.createElement('span'); closeIcon.className = 'tab-icon tab-close'; closeIcon.innerHTML = '×';
@@ -366,7 +375,10 @@
                 const hDiv = document.createElement('div'); hDiv.className = 'column-header';
                 
                 const titleInput = document.createElement('input'); titleInput.type = 'text'; titleInput.value = cat.title;
-                titleInput.onblur = (e) => { page.categories[catIndex].title = e.target.value; localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(pages)); };
+                titleInput.onblur = (e) => { 
+                    page.categories[catIndex].title = e.target.value; 
+                    localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(pages)); 
+                };
                 
                 const addBtn = document.createElement('span'); addBtn.className = 'header-btn header-btn-add'; addBtn.innerHTML = '+'; addBtn.onclick = () => addLink(actualPageIdx, catIndex);
                 const delBtn = document.createElement('span'); delBtn.className = 'header-btn-close'; delBtn.innerHTML = '×'; delBtn.onclick = () => deleteCategory(actualPageIdx, catIndex);
@@ -424,7 +436,8 @@
                    pages[pIdx].categories[cIdx].links = dest;
                 }
             }
-            renderBoard(); localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(pages));
+            renderBoard(); 
+            localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(pages));
         } catch(err){}
         setTimeout(() => isDropProcessing = false, 100);
     }
