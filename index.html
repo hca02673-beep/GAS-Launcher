@@ -3,6 +3,9 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#7D7DFF">
+<link rel="icon" href="icon.png">
+<link rel="apple-touch-icon" href="icon.png">
 <title>Cloud Launcher V10</title>
 <style>
     /* 基本スタイル */
@@ -148,7 +151,6 @@
     let isDragging = false;
     let isDropProcessing = false;
 
-    // --- 初期化 ---
     window.onload = function() {
         const localData = localStorage.getItem(LOCAL_STORAGE_KEY);
         if (localData) {
@@ -165,8 +167,6 @@
         pages = [{ id: "page1", name: "メイン", categories: [{ title: "よく使うリンク", links: [{ name: "Google", url: "https://www.google.com", memo: "", isSub: false }] }] }];
     }
 
-    // --- API通信関連 ---
-    
     function loadFromCloud() {
         if(!confirm("クラウドから最新データを読み出しますか？\n現在の画面内容は上書きされます。")) return;
 
@@ -314,7 +314,6 @@
 
     function closeFileSelectModal() { document.getElementById('file-select-modal-overlay').style.display = 'none'; }
 
-    // --- UIロジック ---
     function isMobileMode() { return window.innerWidth <= 768; }
     function checkMobileDisplay() {
         const isMobile = isMobileMode();
@@ -394,7 +393,6 @@
 
                         const a = document.createElement('a'); a.className = 'link-text'; a.href = link.url; a.target = "_blank";
                         
-                        // サブスクリプションフラグによる表示の分岐
                         if (link.isSub) {
                             a.innerText = '💰 ' + link.name;
                             a.style.fontWeight = 'bold';
@@ -417,7 +415,6 @@
     }
 
     function addLink(pIdx, cIdx) {
-        // デフォルトで isSub: false を設定
         const newLink = { name: "新規リンク", url: "https://", memo: "", isSub: false };
         if (!pages[pIdx].categories[cIdx].links) pages[pIdx].categories[cIdx].links = [];
         pages[pIdx].categories[cIdx].links.push(newLink);
@@ -430,7 +427,6 @@
         const raw = e.dataTransfer.getData('text/plain');
         try {
             if (raw.startsWith('http')) {
-                // ドロップ時の新規リンクも isSub: false をデフォルトに設定
                 const newLink = { name: "New Link", url: raw, memo: "", isSub: false };
                 const links = pages[pIdx].categories[cIdx].links || [];
                 if (insertIdx !== null && insertIdx !== -1) links.splice(insertIdx, 0, newLink); else links.push(newLink);
@@ -450,34 +446,26 @@
         setTimeout(() => isDropProcessing = false, 100);
     }
 
-    // 編集モーダルを開く処理に変更を追加
     function openLinkEditModal(p, c, l) { 
         editingTarget = {p,c,l}; 
         const t = pages[p].categories[c].links[l]; 
         document.getElementById('edit-name-input').value = t.name; 
         document.getElementById('edit-url-input').value = t.url; 
         document.getElementById('edit-memo-input').value = t.memo || ""; 
-        
-        // サブスクリプションチェックボックスの値をセット
         document.getElementById('edit-sub-input').checked = t.isSub || false;
-
         document.getElementById('link-details-container').style.display='flex'; 
         document.getElementById('edit-modal-overlay').style.display='flex'; 
     }
     
     function closeEditModal() { document.getElementById('edit-modal-overlay').style.display='none'; }
     
-    // 編集モーダルの保存処理に変更を追加
     function saveEditModal() { 
         const {p,c,l} = editingTarget; 
         const t = pages[p].categories[c].links[l]; 
         t.name = document.getElementById('edit-name-input').value; 
         t.url = document.getElementById('edit-url-input').value; 
         t.memo = document.getElementById('edit-memo-input').value; 
-        
-        // サブスクリプションチェックボックスの値を保存
         t.isSub = document.getElementById('edit-sub-input').checked;
-
         renderBoard(); 
         localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(pages)); 
         closeEditModal(); 
