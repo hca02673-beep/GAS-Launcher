@@ -47,19 +47,21 @@
     .column-header input { background: transparent; border: none; color: white; font-weight: bold; flex-grow: 1; font-size: 1rem; min-width: 0; }
     .column-header input:focus { background-color: rgba(255,255,255,0.2); outline: none; }
     .header-btn { font-size: 0.8em; cursor: pointer; color: #fff; background-color: rgba(0,0,0,0.2); border-radius: 3px; padding: 2px 6px; user-select: none; }
+    .header-btn:hover { background-color: rgba(0,0,0,0.4); }
     .header-btn-add { background-color: #4CAF50; font-weight: bold; }
-    .header-btn-close { background-color: transparent; color: #fff; font-size: 1.2em; padding: 0 5px; }
+    .header-btn-add:hover { background-color: #45a049; }
+    .header-btn-close { background-color: transparent; color: #fff; font-size: 1.2em; padding: 0 5px; cursor: pointer; }
     .header-btn-close:hover { color: #ffcccc; }
     .link-list { padding: 5px; flex-grow: 1; overflow-y: auto; min-height: 50px; position: relative; }
     .link-item { padding: 4px; margin-bottom: 2px; background-color: white; border-bottom: 1px dotted #ccc; display: flex; justify-content: space-between; align-items: center; cursor: grab; position: relative; }
     .link-item.dragging { opacity: 0.5; cursor: grabbing; }
     .link-item.drag-over-top { border-top: 3px solid #4CAF50; padding-top: 1px; }
+    .link-item.drag-over-bottom { border-bottom: 3px solid #4CAF50; }
     .link-item:hover { background-color: #e0e0ff; }
     .link-text { text-decoration: none; color: blue; cursor: pointer; display: block; flex-grow: 1; font-size: 0.9em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-right: 5px; pointer-events: auto; }
     .link-text:hover { text-decoration: underline; }
     .controls { display: flex; gap: 4px; flex-shrink: 0; }
     .btn-icon { font-size: 1.1em; cursor: pointer; user-select: none; padding: 0 3px; }
-    .link-list.drag-over-bottom { border-bottom: 3px solid #4CAF50; }
 
     /* モーダル共通設定 */
     .modal-overlay { display: none; position: fixed; top:0; left:0; right:0; bottom:0; background-color: rgba(0,0,0,0.5); justify-content: center; align-items: center; z-index: 9998; }
@@ -95,9 +97,9 @@
         <button id="btnLoad" onclick="loadFromCloud()" style="background-color:#e6f3ff;" title="クラウドから読出">☁ 読出</button>
         <button id="btnBackup" onclick="backupToDrive()" title="ドライブにバックアップ作成">☁📤 バックアップ</button>
         <button id="btnRestore" onclick="openFileLoadModal()" title="バックアップから復元">☁📖 バックアップ読出</button>
-        <div style="width:1px; height:20px; background:#ccc; margin:0 5px;"></div>
+        <div id="toolbar-separator" style="width:1px; height:20px; background:#ccc; margin:0 5px;"></div>
         <button id="btnAddPage" onclick="addNewPage()">➕ページ</button>
-        <button id="btnAddCategory" onclick="addCategory()">➕カテゴリ</button>
+        <button id="btnAddCategory" onclick="addCategory()">➕枠追加</button>
     </div>
     <div id="tab-container"></div>
 </div>
@@ -315,11 +317,18 @@
     function closeFileSelectModal() { document.getElementById('file-select-modal-overlay').style.display = 'none'; }
 
     function isMobileMode() { return window.innerWidth <= 768; }
+    
+    // 小画面時のボタン類非表示制御
     function checkMobileDisplay() {
         const isMobile = isMobileMode();
+        document.getElementById('btnBackup').style.display = isMobile ? 'none' : 'inline-block';
+        document.getElementById('btnRestore').style.display = isMobile ? 'none' : 'inline-block';
+        document.getElementById('toolbar-separator').style.display = isMobile ? 'none' : 'block';
         document.getElementById('btnAddPage').style.display = isMobile ? 'none' : 'inline-block';
         document.getElementById('btnAddCategory').style.display = isMobile ? 'none' : 'inline-block';
         document.getElementById('tab-container').style.display = isMobile ? 'none' : 'flex';
+        // 画面リサイズ時にD&Dの可否が変わるため再描画
+        renderBoard();
     }
     window.addEventListener('resize', checkMobileDisplay);
 
@@ -365,11 +374,15 @@
             }
             page.categories.forEach((cat, catIndex) => {
                 const colDiv = document.createElement('div'); colDiv.className = 'column';
-                colDiv.ondrop = (e) => { e.preventDefault(); handleLinkDrop(e, actualPageIdx, catIndex); };
-                colDiv.ondragover = (e) => e.preventDefault();
 
+                // ヘッダー生成
                 const hDiv = document.createElement('div'); hDiv.className = 'column-header';
                 
+                const btnLeft = document.createElement('span'); btnLeft.className = 'header-btn'; btnLeft.innerHTML = '＜';
+                btnLeft.onclick = () => moveCategory(actualPageIdx, catIndex, -1);
+                const btnRight = document.createElement('span'); btnRight.className = 'header-btn'; btnRight.innerHTML = '＞';
+                btnRight.onclick = () => moveCategory(actualPageIdx, catIndex, 1);
+
                 const titleInput = document.createElement('input'); titleInput.type = 'text'; titleInput.value = cat.title;
                 titleInput.onblur = (e) => { 
                     page.categories[catIndex].title = e.target.value; 
@@ -379,23 +392,72 @@
                 const addBtn = document.createElement('span'); addBtn.className = 'header-btn header-btn-add'; addBtn.innerHTML = '+'; addBtn.onclick = () => addLink(actualPageIdx, catIndex);
                 const delBtn = document.createElement('span'); delBtn.className = 'header-btn-close'; delBtn.innerHTML = '×'; delBtn.onclick = () => deleteCategory(actualPageIdx, catIndex);
                 
-                hDiv.append(titleInput, addBtn, delBtn); colDiv.appendChild(hDiv);
+                hDiv.append(btnLeft, btnRight, titleInput, addBtn, delBtn); colDiv.appendChild(hDiv);
 
+                // リスト生成
                 const listDiv = document.createElement('div'); listDiv.className = 'link-list';
                 
+                // D&Dイベントを枠全体ではなくリスト部分のみに限定
+                if (!isMobile) {
+                    listDiv.ondragover = (e) => {
+                        e.preventDefault();
+                        const items = [...listDiv.querySelectorAll('.link-item:not(.dragging)')];
+                        items.forEach(item => { item.classList.remove('drag-over-top'); item.classList.remove('drag-over-bottom'); });
+                        
+                        const hoverItem = items.find(item => {
+                            const rect = item.getBoundingClientRect();
+                            return e.clientY >= rect.top && e.clientY <= rect.bottom;
+                        });
+                        
+                        if (hoverItem) {
+                            const rect = hoverItem.getBoundingClientRect();
+                            const midY = rect.top + rect.height / 2;
+                            if (e.clientY < midY) hoverItem.classList.add('drag-over-top');
+                            else hoverItem.classList.add('drag-over-bottom');
+                        }
+                    };
+
+                    listDiv.ondrop = (e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        
+                        const items = [...listDiv.querySelectorAll('.link-item:not(.dragging)')];
+                        let insertIdx = items.length; // デフォルトは末尾
+                        
+                        // Y座標から正確な挿入インデックスを計算
+                        for (let i = 0; i < items.length; i++) {
+                            const rect = items[i].getBoundingClientRect();
+                            const midY = rect.top + rect.height / 2;
+                            if (e.clientY < midY) {
+                                insertIdx = parseInt(items[i].dataset.index);
+                                break;
+                            } else if (i === items.length - 1 || e.clientY < items[i+1].getBoundingClientRect().top) {
+                                insertIdx = parseInt(items[i].dataset.index) + 1;
+                                break;
+                            }
+                        }
+                        
+                        items.forEach(item => { item.classList.remove('drag-over-top'); item.classList.remove('drag-over-bottom'); });
+                        handleLinkDrop(e, actualPageIdx, catIndex, insertIdx);
+                    };
+                }
+
                 if (cat.links) {
                     cat.links.forEach((link, linkIndex) => {
-                        const lDiv = document.createElement('div'); lDiv.className = 'link-item'; lDiv.draggable = true; lDiv.dataset.index = linkIndex;
-                        lDiv.ondragstart = (e) => { isDragging = true; lDiv.classList.add('dragging'); e.dataTransfer.setData('text/plain', JSON.stringify({ type: 'internal', pageIdx: actualPageIdx, catIdx: catIndex, linkIdx: linkIndex })); };
-                        lDiv.ondragend = () => { isDragging = false; lDiv.classList.remove('dragging'); };
-                        lDiv.ondragover = (e) => { e.preventDefault(); };
-                        lDiv.ondrop = (e) => { e.stopPropagation(); e.preventDefault(); handleLinkDrop(e, actualPageIdx, catIndex, linkIndex); };
+                        const lDiv = document.createElement('div'); lDiv.className = 'link-item'; lDiv.dataset.index = linkIndex;
+                        
+                        // スマホ時はドラッグ無効化
+                        if (!isMobile) {
+                            lDiv.draggable = true;
+                            lDiv.ondragstart = (e) => { isDragging = true; lDiv.classList.add('dragging'); e.dataTransfer.setData('text/plain', JSON.stringify({ type: 'internal', pageIdx: actualPageIdx, catIdx: catIndex, linkIdx: linkIndex })); };
+                            lDiv.ondragend = () => { isDragging = false; lDiv.classList.remove('dragging'); };
+                        }
 
                         const a = document.createElement('a'); a.className = 'link-text'; a.href = link.url; a.target = "_blank";
                         
+                        // 太字指定を解除
                         if (link.isSub) {
                             a.innerText = '💰 ' + link.name;
-                            a.style.fontWeight = 'bold';
                         } else {
                             a.innerText = '・' + link.name;
                         }
@@ -414,6 +476,20 @@
         });
     }
 
+    // 枠の左右移動処理
+    function moveCategory(pIdx, cIdx, direction) {
+        const cats = pages[pIdx].categories;
+        const targetIdx = cIdx + direction;
+        if (targetIdx < 0 || targetIdx >= cats.length) return; // 範囲外なら何もしない
+        
+        const temp = cats[cIdx];
+        cats[cIdx] = cats[targetIdx];
+        cats[targetIdx] = temp;
+        
+        renderBoard();
+        localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(pages));
+    }
+
     function addLink(pIdx, cIdx) {
         const newLink = { name: "新規リンク", url: "https://", memo: "", isSub: false };
         if (!pages[pIdx].categories[cIdx].links) pages[pIdx].categories[cIdx].links = [];
@@ -422,22 +498,36 @@
         openLinkEditModal(pIdx, cIdx, pages[pIdx].categories[cIdx].links.length - 1);
     }
 
-    function handleLinkDrop(e, pIdx, cIdx, insertIdx = null) {
+    function handleLinkDrop(e, pIdx, cIdx, insertIdx) {
         if (isDropProcessing) return; isDropProcessing = true;
         const raw = e.dataTransfer.getData('text/plain');
         try {
             if (raw.startsWith('http')) {
                 const newLink = { name: "New Link", url: raw, memo: "", isSub: false };
                 const links = pages[pIdx].categories[cIdx].links || [];
-                if (insertIdx !== null && insertIdx !== -1) links.splice(insertIdx, 0, newLink); else links.push(newLink);
+                links.splice(insertIdx, 0, newLink);
                 pages[pIdx].categories[cIdx].links = links;
             } else {
                 const d = JSON.parse(raw);
                 if (d.type === 'internal') {
-                   const item = pages[d.pageIdx].categories[d.catIdx].links.splice(d.linkIdx, 1)[0];
-                   const dest = pages[pIdx].categories[cIdx].links || [];
-                   if (insertIdx !== null && insertIdx !== -1) dest.splice(insertIdx, 0, item); else dest.push(item);
-                   pages[pIdx].categories[cIdx].links = dest;
+                   // 同一カテゴリ内の移動時のインデックス計算補正
+                   if (d.pageIdx === pIdx && d.catIdx === cIdx) {
+                       const srcIdx = d.linkIdx;
+                       if (srcIdx === insertIdx || srcIdx === insertIdx - 1) {
+                           // 実質的な移動がない場合はスキップ
+                           isDropProcessing = false;
+                           return; 
+                       }
+                       const item = pages[d.pageIdx].categories[d.catIdx].links.splice(srcIdx, 1)[0];
+                       if (insertIdx > srcIdx) insertIdx--; // 抜いた分インデックスをずらす
+                       pages[pIdx].categories[cIdx].links.splice(insertIdx, 0, item);
+                   } else {
+                       // 別カテゴリからの移動
+                       const item = pages[d.pageIdx].categories[d.catIdx].links.splice(d.linkIdx, 1)[0];
+                       const dest = pages[pIdx].categories[cIdx].links || [];
+                       dest.splice(insertIdx, 0, item);
+                       pages[pIdx].categories[cIdx].links = dest;
+                   }
                 }
             }
             renderBoard(); 
